@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { ChallengeRow, MagneticLink, Reveal } from './components';
 import { challenges } from './data';
 import { HeroExperience, ProjectRail } from './HeroVisual';
+import { refreshScrollTriggersAfterLayoutChange, syncScrollTriggerLayout } from './lib/scrollTriggerLayout';
 
 const stages = [
   { name: 'PEOPLE', accent: 'lime', label: 'Find your people.', body: 'Meet students who are curious about the same things you are. Different skills, shared energy, no perfect pitch required.', action: 'See where the community gathers', icon: Users },
@@ -55,19 +56,24 @@ function EcosystemStory() {
   const reduced = useReducedMotion();
   useEffect(() => {
     const node = root.current;
-    if (!node || reduced || window.innerWidth < 760) return;
-    let trigger: { kill: () => void } | undefined;
+    if (!node || reduced) return;
+    let media: { add: (query: string, callback: () => (() => void) | void) => unknown; revert: () => void } | undefined;
     let active = true;
     import('gsap').then(async ({ gsap }) => {
       const { ScrollTrigger } = await import('gsap/ScrollTrigger');
       if (!active) return;
       gsap.registerPlugin(ScrollTrigger);
-      trigger = ScrollTrigger.create({ trigger: node, start: 'top top', end: '+=1650', pin: true, scrub: .65, onUpdate: self => {
-        const next = Math.min(2, Math.floor(self.progress * 3));
-        if (next !== current.current) { current.current = next; setStage(next); }
-      } });
+      media = gsap.matchMedia();
+      media.add('(min-width: 1024px) and (min-height: 780px) and (prefers-reduced-motion: no-preference)', () => {
+        const stopSync = syncScrollTriggerLayout(ScrollTrigger, () => active);
+        const trigger = ScrollTrigger.create({ trigger: node, start: 'top top', end: '+=1650', pin: true, pinSpacing: true, anticipatePin: 1, scrub: .65, onUpdate: self => {
+          const next = Math.min(2, Math.floor(self.progress * 3));
+          if (next !== current.current) { current.current = next; setStage(next); }
+        } });
+        return () => { stopSync(); trigger.kill(); };
+      });
     });
-    return () => { active = false; trigger?.kill(); };
+    return () => { active = false; media?.revert(); };
   }, [reduced]);
   const stageAction = stages[stage];
   const Icon = stageAction.icon;
@@ -110,7 +116,7 @@ function EntryPoints() {
     { title: 'I can help build.', detail: 'Join something already moving and bring your perspective to the work.', to: '/projects', cta: 'Explore the project space', color: 'entry-paper', glyph: '＋' },
     { title: 'I’m just looking.', detail: 'See what people are exploring. Follow the thread that makes you curious.', to: '/challenges', cta: 'See what’s happening', color: 'entry-dark', glyph: '⌁' },
   ];
-  return <section className="entry-section" aria-labelledby="entry-heading"><div className="wrap"><div className="section-head"><span className="eyebrow">03 / PICK YOUR WAY IN</span><span className="eyebrow">NO WRONG FIRST MOVE</span></div><div className="entry-intro"><h2 id="entry-heading">Where do you<br/>want to begin<span className="violet-period">?</span></h2><p>There’s more than one door into a good project. Choose the one that sounds like you today.</p></div><div className="entry-list">{paths.map((path, index) => <div className={`entry-row ${path.color} ${active === index ? 'is-open' : ''}`} key={path.title}><button aria-expanded={active === index} onClick={() => setActive(active === index ? null : index)}><span className="entry-number">0{index + 1}</span><span className="entry-title">{path.title}</span><span className="entry-glyph">{path.glyph}</span></button><AnimatePresence initial={false}>{active === index && <motion.div className="entry-details" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: .35, ease: [.22, 1, .36, 1] }}><p>{path.detail}</p><Link to={path.to}>{path.cta}<ArrowUpRight size={15}/></Link></motion.div>}</AnimatePresence></div>)}</div></div></section>;
+  return <section className="entry-section" aria-labelledby="entry-heading"><div className="wrap"><div className="section-head"><span className="eyebrow">03 / PICK YOUR WAY IN</span><span className="eyebrow">NO WRONG FIRST MOVE</span></div><div className="entry-intro"><h2 id="entry-heading">Where do you<br/>want to begin<span className="violet-period">?</span></h2><p>There’s more than one door into a good project. Choose the one that sounds like you today.</p></div><div className="entry-list">{paths.map((path, index) => <div className={`entry-row ${path.color} ${active === index ? 'is-open' : ''}`} key={path.title}><button aria-expanded={active === index} onClick={() => setActive(active === index ? null : index)}><span className="entry-number">0{index + 1}</span><span className="entry-title">{path.title}</span><span className="entry-glyph">{path.glyph}</span></button><AnimatePresence initial={false}>{active === index && <motion.div className="entry-details" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: .35, ease: [.22, 1, .36, 1] }} onAnimationComplete={refreshScrollTriggersAfterLayoutChange}><p>{path.detail}</p><Link to={path.to}>{path.cta}<ArrowUpRight size={15}/></Link></motion.div>}</AnimatePresence></div>)}</div></div></section>;
 }
 
 function CommunityBand() {
@@ -122,14 +128,15 @@ function CommunityBand() {
   useEffect(() => {
     const node = visualHost.current;
     if (!node) return;
+    let active = true;
     const observer = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) {
         observer.disconnect();
-        import('./Sculpture').then(module => setVisual(() => module.CollaborationOrbit));
+        import('./Sculpture').then(module => { if (active) setVisual(() => module.CollaborationOrbit); });
       }
     }, { rootMargin: '100px' });
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => { active = false; observer.disconnect(); };
   }, []);
   return <section className="community-band new-community" aria-labelledby="community-home-heading"><div className="wrap new-community-inner"><div className="community-meta"><span className="eyebrow">04 / YOUR PEOPLE ARE OUT THERE</span><span className="eyebrow">A PLACE FOR THE IN-PROGRESS</span></div><div className="community-composition"><div className="community-message"><p className="eyebrow">YOU DON’T NEED A PERFECT INTRODUCTION</p><h2 id="community-home-heading">Your people<br/>are out there<span className="lime-period">.</span></h2><p className="community-support">Somewhere, someone is</p><div className="community-changing-line" aria-live="polite"><AnimatePresence mode="wait" initial={false}><motion.span key={line} initial={reduced ? false : { y: '110%', opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={reduced ? undefined : { y: '-110%', opacity: 0 }} transition={{ duration: reduced ? 0 : .36, ease: [.22, 1, .36, 1] }}>{lines[line]}</motion.span></AnimatePresence><button onClick={() => setLine((line + 1) % lines.length)} aria-label="Show another way your people might be looking">↗</button></div><Link className="button button-lime" to="/community">Meet your people <ArrowUpRight size={16}/></Link></div><div className="community-visual" ref={visualHost}><div className="community-visual-frame">{Visual ? <Visual/> : <div className="community-visual-placeholder"><span>PEOPLE</span><span>IDEAS</span><span>TOGETHER</span></div>}<span className="collab-label collab-one">SHARED<br/>QUESTION</span><span className="collab-label collab-two">DIFFERENT<br/>PERSPECTIVES</span><span className="collab-label collab-three">A FIRST<br/>DRAFT</span><span className="collab-caption eyebrow">A LITTLE CLOSER, ALREADY.</span></div></div></div></div></section>;
 }

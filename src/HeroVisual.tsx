@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { syncScrollTriggerLayout } from './lib/scrollTriggerLayout';
 
 const concepts = [
   { index: '01', tag: 'CAMPUS / CONNECTION', title: 'A better campus map.', accent: 'violet', symbol: '↗', description: 'A concept prompt about making campus life easier to navigate.' },
@@ -14,11 +15,12 @@ export function HeroExperience() {
   useEffect(() => {
     const node = host.current;
     if (!node) return;
+    let active = true;
     const observer = new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) { observer.disconnect(); import('./Sculpture').then(module => setSculpture(() => module.HeroSculpture)); }
+      if (entry.isIntersecting) { observer.disconnect(); import('./Sculpture').then(module => { if (active) setSculpture(() => module.HeroSculpture); }); }
     }, { rootMargin: '120px' });
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => { active = false; observer.disconnect(); };
   }, []);
   return <div ref={host} className="hero-sculpture" role="img" aria-label="An orbiting network of people, ideas, teams, and projects around a shared starting point">
     <div className="sculpture-index" aria-hidden="true">THE CAMPUSCODE LOOP <span>001</span></div>
@@ -34,22 +36,28 @@ export function ProjectRail() {
   useEffect(() => {
     const root = section.current;
     const rail = track.current;
-    if (!root || !rail || window.matchMedia('(prefers-reduced-motion: reduce)').matches || window.innerWidth < 760) return;
-    let context: { revert: () => void } | undefined;
+    if (!root || !rail) return;
+    let media: { add: (query: string, callback: () => (() => void) | void) => unknown; revert: () => void } | undefined;
     let active = true;
     import('gsap').then(async ({ gsap }) => {
       const { ScrollTrigger } = await import('gsap/ScrollTrigger');
       if (!active) return;
       gsap.registerPlugin(ScrollTrigger);
-      context = gsap.context(() => {
-        const distance = () => Math.max(0, rail.scrollWidth - root.clientWidth);
-        gsap.to(rail, { x: () => -distance(), ease: 'none', scrollTrigger: {
-          trigger: root, start: 'top top', end: () => `+=${distance() + window.innerHeight * 0.45}`,
-          pin: true, scrub: 0.7, invalidateOnRefresh: true,
-        } });
-      }, root);
+      media = gsap.matchMedia();
+      media.add('(min-width: 1024px) and (min-height: 780px) and (prefers-reduced-motion: no-preference)', () => {
+        root.classList.add('is-pinned-rail');
+        const stopSync = syncScrollTriggerLayout(ScrollTrigger, () => active);
+        const context = gsap.context(() => {
+          const distance = () => Math.max(0, rail.scrollWidth - root.clientWidth);
+          gsap.to(rail, { x: () => -distance(), ease: 'none', scrollTrigger: {
+            trigger: root, start: 'top top', end: () => `+=${distance() + window.innerHeight * 0.45}`,
+            pin: true, pinSpacing: true, anticipatePin: 1, scrub: 0.7, invalidateOnRefresh: true,
+          } });
+        }, root);
+        return () => { stopSync(); context.revert(); root.classList.remove('is-pinned-rail'); };
+      });
     });
-    return () => { active = false; context?.revert(); };
+    return () => { active = false; media?.revert(); root.classList.remove('is-pinned-rail'); };
   }, []);
   return <section className="project-rail-section" ref={section}>
     <div className="project-rail-heading wrap">
